@@ -23,8 +23,12 @@ class RagRetriever:
     def answer(self, question: str) -> dict:
         hit = self.search(question)
         if hit is None:
-            return {"status": "not_found", "answer": "I could not find a confident answer in the approved clinic knowledge base.", "retrieval": {}}
-        return {"status": "success", "answer": format_answer(hit.document), "retrieval": hit_payload(hit)}
+            return {
+                "status": "not_found",
+                "answer": "I could not find a confident answer in the approved clinic knowledge base. Please contact the clinic directly for guidance.",
+                "retrieval": {},
+            }
+        return {"status": "success", "answer": format_answer(hit.document, question), "retrieval": hit_payload(hit)}
 
     def search(self, question: str) -> RetrievalHit | None:
         filters = infer_filters(question)
@@ -91,13 +95,64 @@ def apply_service_boost(question: str, document: Document, score: float) -> floa
         score -= 0.12
     return max(min(score, 1.0), 0.0)
 
-def format_answer(document: Document) -> str:
-    snippet = " ".join(document.content.split())
-    if len(snippet) > 900:
-        snippet = snippet[:900].rsplit(" ", 1)[0] + "..."
+def format_answer(document: Document, question: str = "") -> str:
+    metadata = document.metadata or {}
+    page_type = str(metadata.get("page_type") or "").lower()
+    service_name = str(metadata.get("service_name") or document.title).strip()
+    treatments = listify(metadata.get("treatments"))
+    conditions = listify(metadata.get("conditions"))
+    appointment_eligible = bool(metadata.get("appointment_eligible"))
+
+    if page_type == "service":
+        focus_parts = []
+        if treatments:
+            focus_parts.append("treatments such as " + readable_list(treatments[:4]))
+        if conditions:
+            focus_parts.append("conditions such as " + readable_list(conditions[:4]))
+        focus = " and ".join(focus_parts) if focus_parts else "this fertility care topic"
+        lines = [
+            f"Yes. Based on the clinic information, Dr. Madhu Patil's team covers {service_name}.",
+            f"This page is relevant to {focus}.",
+        ]
+        if appointment_eligible:
+            lines.append("For a personal recommendation, the safest next step is to book a consultation so the doctor can review history, reports, and goals.")
+        else:
+            lines.append("For personal medical advice, the clinic should review the patient's history and reports directly.")
+        if document.url:
+            lines.append(f"Source: {document.url}")
+        return "\n\n".join(lines)
+
+    snippet = clean_snippet(document.content, 420)
+    lines = [
+        "I found a relevant clinic page, but it is a broader overview rather than a specific service page.",
+        snippet,
+    ]
     if document.url:
-        return f"{document.title}: {snippet}\n\nSource: {document.url}"
-    return f"{document.title}: {snippet}"
+        lines.append(f"Source: {document.url}")
+    return "\n\n".join(lines)
+
+def listify(value) -> list[str]:
+    if isinstance(value, (list, tuple, set)):
+        return [str(item).strip() for item in value if str(item).strip()]
+    if value:
+        return [str(value).strip()]
+    return []
+
+def readable_list(items: list[str]) -> str:
+    if not items:
+        return ""
+    if len(items) == 1:
+        return items[0]
+    return ", ".join(items[:-1]) + f", and {items[-1]}"
+
+def clean_snippet(content: str, limit: int = 420) -> str:
+    snippet = " ".join(content.split())
+    prefixes = ["Title:", "Source URL:", "Headings:"]
+    for prefix in prefixes:
+        snippet = snippet.replace(prefix, "")
+    if len(snippet) > limit:
+        snippet = snippet[:limit].rsplit(" ", 1)[0] + "..."
+    return snippet.strip()
 
 def hit_payload(hit: RetrievalHit) -> dict:
     return {"doc_id": hit.document.doc_id, "title": hit.document.title, "url": hit.document.url, "score": round(hit.score, 4), "keyword_score": round(hit.keyword_score, 4), "vector_score": round(hit.vector_score, 4), "mode": hit.mode, "filter_mode": hit.filter_mode, "metadata": hit.document.metadata}
