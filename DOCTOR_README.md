@@ -2,6 +2,18 @@
 
 This project is a clinic knowledge assistant demo for Dr. Madhu Patil's Clinic.
 
+For the full technical handoff from this RAG demo back to the main multi-agent implementation, see:
+
+```text
+PROJECT_HANDOFF_LOG.md
+```
+
+Current live review link:
+
+```text
+https://rag-usecase-0-jatcfdo4uq-uc.a.run.app/review
+```
+
 The goal is simple:
 
 ```text
@@ -452,4 +464,10 @@ More diagrams are available here:
 
 ```text
 docs/03_ARCHITECTURE.md
+```
+
+For the product vision, patient-flow metrics, and business benchmarks, read:
+
+```text
+PRODUCT_IDEATION_AND_BUSINESS_OUTCOMES.md
 ```
