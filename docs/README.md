@@ -9,3 +9,4 @@ Start here:
 2. `01_OPERATING_LOG.md` - running log of implementation and deployment work.
 3. `02_CONTENT_IMPROVEMENT_LOOP.md` - repeatable process for doctor feedback to embeddings.
 4. `03_ARCHITECTURE.md` - architecture and sub-architecture diagrams.
+5. `04_KNOWLEDGE_SYNC_ORCHESTRATION.md` - weekly export/import bridge from RAG demo to main multi-agent project.

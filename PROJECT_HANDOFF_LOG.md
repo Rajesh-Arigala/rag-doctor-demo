@@ -635,3 +635,39 @@ health 200
 review 200
 chat 200 <doc_id> <retrieval_mode>
 ```
+
+## 14. Knowledge Sync Orchestration
+
+Weekly RAG updates should move into the main multi-agent project through an export/import bundle, not manual selective copying.
+
+Export from this RAG demo:
+
+```bash
+scripts/run_full_knowledge_sync.sh /path/to/main/backend/knowledge/latest
+```
+
+Or step by step:
+
+```bash
+python3 scripts/export_knowledge_bundle.py
+```
+
+Import into main project destination:
+
+```bash
+python3 scripts/import_knowledge_bundle.py exports/latest /path/to/main/backend/knowledge/latest
+```
+
+Detailed guide:
+
+```text
+docs/04_KNOWLEDGE_SYNC_ORCHESTRATION.md
+KNOWLEDGE_EXPORT_IMPORT_TEST_RUNBOOK.md
+```
+
+Note:
+
+```text
+exports/ is generated and ignored by git.
+For production sync, make sure exports/latest/embeddings.jsonl exists before importing into the main project.
+```

@@ -205,9 +205,35 @@ FaqTools / triage_agent
 web_search_agent only after policy gate
 ```
 
+Weekly sync should not be manual copy-paste. Use:
+
+```bash
+scripts/run_full_knowledge_sync.sh /path/to/main/backend/knowledge/latest
+```
+
+Or step by step:
+
+```bash
+python3 scripts/export_knowledge_bundle.py
+python3 scripts/import_knowledge_bundle.py exports/latest /path/to/main/backend/knowledge/latest
+```
+
+Details:
+
+```text
+docs/04_KNOWLEDGE_SYNC_ORCHESTRATION.md
+KNOWLEDGE_EXPORT_IMPORT_TEST_RUNBOOK.md
+```
+
+Important:
+
+```text
+exports/ is generated and ignored by git.
+Before importing to the main project, confirm exports/latest/embeddings.jsonl exists.
+```
+
 ## 9. Current Pause Point
 
 Wait for doctor's first daily Q&A `.md` file.
 
 Then start the content improvement loop.
-

@@ -32,6 +32,13 @@ For architecture and execution diagrams, read:
 docs/03_ARCHITECTURE.md
 ```
 
+For weekly export/import from RAG demo to the main multi-agent project, read:
+
+```text
+docs/04_KNOWLEDGE_SYNC_ORCHESTRATION.md
+KNOWLEDGE_EXPORT_IMPORT_TEST_RUNBOOK.md
+```
+
 ## Doctor Experience
 
 Share:
