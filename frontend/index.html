@@ -126,8 +126,8 @@
         const sources = document.createElement('div');
         sources.className = 'sources';
         sources.innerHTML = `
-          <span class="source-card">${escapeHtml(retrieval.title || 'Clinic website')}</span>
-          ${retrieval.score ? `<span class="source-card">Grounding score ${escapeHtml(String(retrieval.score))}</span>` : ''}
+          <span class="source-card">${escapeHtml(retrieval.title || 'Clinic source')}</span>
+          ${retrieval.score ? `<span class="source-card">Grounding confidence ${escapeHtml(String(retrieval.score))}</span>` : ''}
           ${retrieval.url ? `<span class="source-card"><a href="${escapeAttr(retrieval.url)}" target="_blank" rel="noreferrer">Source page</a></span>` : ''}
         `;
         article.appendChild(sources);

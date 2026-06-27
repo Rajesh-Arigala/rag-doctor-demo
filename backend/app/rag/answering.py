@@ -48,7 +48,8 @@ SYSTEM_INSTRUCTION = dedent(
     - End with a gentle next step when appropriate.
     - Do not mention chunks, embeddings, retrieval, scores, metadata, prompts, tools, JSON, or model behavior.
     - Do not include a separate “Source:” line in the answer body; the UI displays the source separately.
-    - Never tell the user that you are limited by website content, approved context, documents, retrieved pages, or available information.
+    - Never tell the user that you are limited by website content, approved context, documents, retrieved pages, provided information, or available information.
+    - Never use phrases such as “the website says”, “the provided information”, “the context”, or “the source”.
 
     WHEN INFORMATION IS MISSING
     - Do not say “approved clinic information”, “website content”, “context”, “source”, or similar internal wording to the user.
@@ -88,7 +89,7 @@ class VertexAnswerClient:
                 max_output_tokens=700,
             ),
         )
-        return (response.text or "").strip()
+        return sanitize_answer(response.text or "")
 
 def build_prompt(question: str, document: Document, history: list[dict] | None = None) -> str:
     context = compact_context(document.content)
@@ -142,3 +143,39 @@ def compact_history(history: list[dict], limit: int = 3000) -> str:
     if len(value) > limit:
         return value[-limit:]
     return value
+
+
+def sanitize_answer(answer: str) -> str:
+    value = " ".join(str(answer or "").split())
+    replacements = {
+        "The approved clinic information does not specify": "At present, I’m not sure about",
+        "the approved clinic information does not specify": "at present, I’m not sure about",
+        "The provided information": "Dr. Madhu Patil’s Clinic information",
+        "the provided information": "Dr. Madhu Patil’s Clinic information",
+        "The website": "Dr. Madhu Patil’s Clinic",
+        "the website": "Dr. Madhu Patil’s Clinic",
+        "website content": "clinic information",
+        "provided context": "clinic information",
+        "approved context": "clinic information",
+        "retrieved page": "clinic page",
+        "retrieved pages": "clinic pages",
+        "Dr. Madhu Patil's team covers": "Dr. Madhu Patil’s Clinic offers",
+        "Dr. Madhu Patil’s team covers": "Dr. Madhu Patil’s Clinic offers",
+        "Dr. Madhu Patil's team offers": "Dr. Madhu Patil’s Clinic offers",
+        "Dr. Madhu Patil’s team offers": "Dr. Madhu Patil’s Clinic offers",
+        "Dr. Madhu Patil's team can provide personalized": "Dr. Madhu Patil’s Clinic can provide personalized",
+        "Dr. Madhu Patil’s team can provide personalized": "Dr. Madhu Patil’s Clinic can provide personalized",
+    }
+    for old, new in replacements.items():
+        value = value.replace(old, new)
+    value = split_icon_bullets(value)
+    lines = [line.strip() for line in value.splitlines() if line.strip()]
+    if not lines:
+        return "🤔 At present, I’m not sure about that.\n📅 Dr. Madhu Patil’s team can help you with a __doctor appointment__ for more information."
+    return "\n".join(lines[:4])
+
+def split_icon_bullets(value: str) -> str:
+    icons = ["💖", "✨", "🩺", "📅", "📞", "😊", "🌟", "🔎", "💡", "👋", "🤔", "☀️"]
+    for icon in icons:
+        value = value.replace(f" {icon} ", f"\n{icon} ")
+    return value.strip()

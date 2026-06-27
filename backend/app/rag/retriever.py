@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 from app.config import RAG_USE_GENERATION
-from app.rag.answering import VertexAnswerClient
+from app.rag.answering import VertexAnswerClient, sanitize_answer
 from app.rag.embeddings import HashEmbeddingClient, VertexEmbeddingClient, cosine
+from app.rag.faq import find_faq_answer
 from app.rag.loader import save_vectors
 from app.rag.models import Document, RetrievalHit
 from app.rag.text import terms, tokenize
@@ -14,6 +15,7 @@ PREP_TERMS = {"prepare", "preparation", "before visit", "before visiting", "befo
 PROFILE_TERMS = {"experience", "clinical work", "obstetrics", "gynecology", "reproductive medicine", "drew you", "focused area", "practice", "doctor profile", "professional journey", "achievements"}
 BROAD_FERTILITY_TERMS = {"fertility", "infertility", "fertility issue", "fertility issues", "issue with fertility"}
 FOLLOWUP_TERMS = {"summary", "summarize", "short", "brief", "more", "more detail", "details", "explain simply", "simplify", "continue"}
+IDENTITY_TERMS = {"who are you", "why are you here", "what do you do", "where do you work"}
 GREETING_TERMS = {"hi", "hello", "hey", "good morning", "good afternoon", "good evening"}
 DEFINITION_TERMS = {"what", "what is", "explain", "meaning", "define", "tell me about"}
 TREATMENT_DEFINITIONS = {
@@ -44,6 +46,18 @@ class RagRetriever:
                 "retrieval": {},
             }
 
+        if is_identity_question(question):
+            return {
+                "status": "success",
+                "answer": "👋 **I’m Dr. Madhu Patil’s Clinic assistant.**\n✨ I help with clinic services, fertility topics, appointments, and general patient questions.\n🩺 I keep answers short, clear, and grounded in clinic information.\n📅 If you need personal guidance, Dr. Madhu Patil’s team can help with an appointment.",
+                "retrieval": {},
+            }
+        faq = find_faq_answer(question)
+        if faq is not None:
+            answer, doc_id = faq
+            document = self.document_by_id(doc_id)
+            return {"status": "success", "answer": sanitize_answer(answer), "retrieval": hit_payload_for_document(document, "faq_exact") if document else {}}
+
         search_question = expand_followup_question(question, history)
         hit = self.search(search_question)
         if hit is None:
@@ -54,6 +68,12 @@ class RagRetriever:
             }
         return {"status": "success", "answer": self.compose_answer(question, hit.document, history), "retrieval": hit_payload(hit)}
 
+    def document_by_id(self, doc_id: str) -> Document | None:
+        for document in self.documents:
+            if document.doc_id == doc_id:
+                return document
+        return None
+
     def compose_answer(self, question: str, document: Document, history: list[dict] | None = None) -> str:
         if self.answer_client is None:
             return format_answer(document, question)
@@ -61,7 +81,7 @@ class RagRetriever:
             answer = self.answer_client.answer(question, document, history or [])
         except Exception:
             answer = ""
-        return answer or format_answer(document, question)
+        return sanitize_answer(answer or format_answer(document, question))
 
     def search(self, question: str) -> RetrievalHit | None:
         filters = infer_filters(question)
@@ -192,10 +212,10 @@ def format_answer(document: Document, question: str = "") -> str:
             lines.append("📅 For personal medical advice, please discuss directly with Dr. Madhu Patil's Clinic.")
         return "\n".join(lines[:4])
 
-    snippet = clean_snippet(document.content, 420)
     lines = [
-        "ℹ️ I found relevant clinic information for this question.",
-        f"📌 {snippet}",
+        "ℹ️ **Dr. Madhu Patil’s Clinic** provides gynecology and fertility care across routine women’s health and advanced fertility services.",
+        "🩺 Dr. Madhu Patil is described as a Gynecologist and IVF Specialist with 13+ years in obstetrics and gynecology and 9+ years in infertility and ART.",
+        "🌟 The clinic highlights fertility assessment, IVF/ICSI, IUI, fertility preservation, PCOS/endometriosis care, and immunotherapy in infertility.",
         "📅 For personal guidance, __booking a consultation__ is the best next step.",
     ]
     return "\n".join(lines[:4])
@@ -209,6 +229,13 @@ def expand_followup_question(question: str, history: list[dict]) -> str:
         if content and str(item.get("role", "")).lower() in {"assistant", "user"}:
             return f"{question} Previous topic: {content[:500]}"
     return question
+
+def is_identity_question(question: str) -> bool:
+    stripped = question.strip().lower().rstrip("?.!")
+    query_terms = terms(question)
+    if stripped in IDENTITY_TERMS:
+        return True
+    return bool(query_terms.intersection(IDENTITY_TERMS))
 
 def is_greeting(question: str) -> bool:
     query_terms = terms(question)
@@ -251,3 +278,8 @@ def clean_snippet(content: str, limit: int = 420) -> str:
 
 def hit_payload(hit: RetrievalHit) -> dict:
     return {"doc_id": hit.document.doc_id, "title": hit.document.title, "url": hit.document.url, "score": round(hit.score, 4), "keyword_score": round(hit.keyword_score, 4), "vector_score": round(hit.vector_score, 4), "mode": hit.mode, "filter_mode": hit.filter_mode, "metadata": hit.document.metadata}
+
+def hit_payload_for_document(document: Document | None, mode: str) -> dict:
+    if document is None:
+        return {}
+    return {"doc_id": document.doc_id, "title": document.title, "url": document.url, "score": 1.0, "keyword_score": 1.0, "vector_score": 1.0, "mode": mode, "filter_mode": "faq", "metadata": document.metadata}

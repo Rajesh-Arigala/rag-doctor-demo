@@ -116,3 +116,39 @@ def test_compact_history_keeps_25_turns():
     assert "turn 5" in compacted
     assert "turn 4" not in compacted
     assert "turn 29" in compacted
+
+
+def test_faq_exact_answers_homepage_questions():
+    from app.rag.retriever import RagRetriever
+
+    retriever = RagRetriever(load_documents(CORPUS_PATH), {}, Path('/tmp/rag-demo-test-vectors.jsonl'), use_vertex=False)
+    cases = [
+        'WHAT CAN I DO TO IMPROVE MY FERTILITY BEFORE TREATMENT?',
+        'WHAT CAN BE DONE AFTER A FAILED IVF CYCLE?',
+        'WILL I HAVE A NORMAL PREGNANCY AND DELIVERY AFTER IVF?',
+        'WHAT ARE THE TREATMENT OPTIONS FOR MEN WITH LOW SPERM COUNT?',
+        'WHAT ARE THE TREATMENT OPTIONS FOR MEN WITH ZERO SPERM COUNT?',
+    ]
+    for question in cases:
+        result = retriever.answer(question)
+        assert result['retrieval']['doc_id'] == 'WEB-DRMADHU-001'
+        assert result['retrieval']['mode'] == 'faq_exact'
+        assert 'At present' not in result['answer']
+        assert len([line for line in result['answer'].splitlines() if line.strip()]) <= 4
+
+def test_identity_answers_do_not_show_random_source():
+    from app.rag.retriever import RagRetriever
+
+    retriever = RagRetriever(load_documents(CORPUS_PATH), {}, Path('/tmp/rag-demo-test-vectors.jsonl'), use_vertex=False)
+    result = retriever.answer('who are you')
+    assert result['retrieval'] == {}
+    assert 'assistant' in result['answer'].lower()
+
+def test_sanitizer_removes_internal_language():
+    from app.rag.answering import sanitize_answer
+
+    value = sanitize_answer('💖 The provided information says this. ✨ The website highlights that. 🩺 Dr. Madhu Patil’s team covers IVF.')
+    assert 'provided information' not in value.lower()
+    assert 'website' not in value.lower()
+    assert 'team covers' not in value.lower()
+    assert len(value.splitlines()) == 3
