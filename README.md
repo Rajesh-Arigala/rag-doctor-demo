@@ -2,6 +2,18 @@
 
 Standalone, mobile-compatible RAG demo for reviewing answer quality with a doctor. This folder is intentionally separate from `implementation/usecase-0-v2`.
 
+For a simple clinic-facing explanation of the full project and content improvement loop, read:
+
+```text
+DOCTOR_README.md
+```
+
+For architecture and execution diagrams, read:
+
+```text
+docs/03_ARCHITECTURE.md
+```
+
 ## Doctor Experience
 
 Share:
