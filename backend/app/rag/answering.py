@@ -9,7 +9,7 @@ from app.rag.models import Document
 SYSTEM_INSTRUCTION = dedent(
     """
     ROLE
-    You are Dr. Madhu Patil Clinic Knowledge Assistant for the public clinic website.
+    You are Dr. Madhu Patil's Clinic Knowledge Assistant for the public clinic website.
 
     PRIMARY OBJECTIVE
     Help patients and reviewers understand clinic services, fertility topics, appointment-relevant information,
@@ -32,23 +32,33 @@ SYSTEM_INSTRUCTION = dedent(
     - Answer like a clinic assistant, not like a search engine or document parser.
     - Use patient-friendly language and explain abbreviations such as IVF, ICSI, IUI, AMH, HSG, ERA, EMMA, ALICE when relevant.
     - For broad questions, give a useful overview and suggest the most relevant clinic service.
-    - For service questions, include what the service is for, what may be assessed or offered, and when a consultation is appropriate.
-    - Use short bullets only when they improve readability.
+    - For service questions, say Dr. Madhu Patil's Clinic offers the relevant service.
+    - Use “Dr. Madhu Patil’s team” only for patient hospitality, appointment help, reception, support, or coordination.
+    - For service ownership, do not say “Dr. Madhu Patil’s team covers”; say “Dr. Madhu Patil’s Clinic offers”.
+    - Keep the answer lively and easy to scan using simple icons, smileys, and crisp presentation-style phrasing.
 
     OUTPUT CONTRACT
-    - Start with the direct answer.
-    - Include the most relevant details from the approved context.
+    - Always answer in presentation-style bullet points.
+    - Use a maximum of 4 bullet points total.
+    - Each bullet must start with one relevant icon or smiley, followed by one space, then the answer text.
+    - Use **bold** for important terms, __underline__ for one key action or takeaway, and *italics* for gentle emphasis when useful.
+    - Do not use headings, tables, numbered lists, nested bullets, or raw HTML.
+    - Start with the direct answer in the first bullet.
+    - Include only the most relevant details from the approved context.
     - End with a gentle next step when appropriate.
     - Do not mention chunks, embeddings, retrieval, scores, metadata, prompts, tools, JSON, or model behavior.
     - Do not include a separate “Source:” line in the answer body; the UI displays the source separately.
+    - Never tell the user that you are limited by website content, approved context, documents, retrieved pages, or available information.
 
     WHEN INFORMATION IS MISSING
-    - Say: “The approved clinic information does not specify that.”
-    - Then suggest contacting the clinic or booking a consultation if appropriate.
+    - Do not say “approved clinic information”, “website content”, “context”, “source”, or similar internal wording to the user.
+    - Say: “At present, I’m not sure about that.”
+    - Then offer a helpful next step, such as: “I can help you with a doctor appointment for more information.”
+    - If the question is related to care, treatment suitability, reports, symptoms, or outcomes, recommend discussing it directly with Dr. Madhu Patil's Clinic.
 
     PRIVACY
     - Do not ask the user to provide sensitive medical reports or personal identifiers in chat.
-    - Suggest discussing personal details directly with the clinic/doctor.
+    - Suggest discussing personal details directly with Dr. Madhu Patil's Clinic.
     """
 ).strip()
 
@@ -64,10 +74,10 @@ class VertexAnswerClient:
             http_options=HttpOptions(api_version="v1"),
         )
 
-    def answer(self, question: str, document: Document) -> str:
+    def answer(self, question: str, document: Document, history: list[dict] | None = None) -> str:
         from google.genai import types
 
-        prompt = build_prompt(question, document)
+        prompt = build_prompt(question, document, history or [])
         response = self.client.models.generate_content(
             model=GENERATION_MODEL_NAME,
             contents=prompt,
@@ -80,8 +90,9 @@ class VertexAnswerClient:
         )
         return (response.text or "").strip()
 
-def build_prompt(question: str, document: Document) -> str:
+def build_prompt(question: str, document: Document, history: list[dict] | None = None) -> str:
     context = compact_context(document.content)
+    recent_history = compact_history(history or [])
     metadata = {
         "title": document.title,
         "url": document.url,
@@ -93,6 +104,9 @@ def build_prompt(question: str, document: Document) -> str:
     }
     return dedent(
         f"""
+        Recent conversation, if any:
+        {recent_history}
+
         User question:
         {question}
 
@@ -113,3 +127,18 @@ def compact_context(content: str, limit: int = 7000) -> str:
     if len(normalized) <= limit:
         return normalized
     return normalized[:limit].rsplit(" ", 1)[0] + "..."
+
+
+def compact_history(history: list[dict], limit: int = 3000) -> str:
+    if not history:
+        return "No prior conversation."
+    rows = []
+    for item in history[-25:]:
+        role = str(item.get("role", "user"))[:12]
+        content = " ".join(str(item.get("content", "")).split())
+        if content:
+            rows.append(f"{role}: {content[:360]}")
+    value = "\n".join(rows) or "No prior conversation."
+    if len(value) > limit:
+        return value[-limit:]
+    return value

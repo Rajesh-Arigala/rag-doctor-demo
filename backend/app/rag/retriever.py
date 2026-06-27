@@ -10,7 +10,10 @@ from app.rag.text import terms, tokenize
 CONDITION_TERMS = {"pcos": "pcos", "endometriosis": "endometriosis", "irregular periods": "irregular periods", "hormonal": "hormonal issues", "hormonal issues": "hormonal issues", "infertility": "infertility"}
 TREATMENT_TERMS = {"ivf": "ivf", "icsi": "icsi", "iui": "iui", "fertility preservation": "fertility preservation", "egg freezing": "egg freezing", "sperm freezing": "sperm freezing", "embryo freezing": "embryo freezing", "fertility assessment": "fertility assessment", "fertility issue": "fertility assessment", "fertility issues": "fertility assessment", "issue with fertility": "fertility assessment", "immunotherapy": "immunotherapy"}
 APPOINTMENT_TERMS = {"appointment", "book", "consult", "consultation", "schedule", "visit"}
+PREP_TERMS = {"prepare", "preparation", "before visit", "before visiting", "before appointment", "first visit", "what should i bring", "what prep", "visit doctor"}
+PROFILE_TERMS = {"experience", "clinical work", "obstetrics", "gynecology", "reproductive medicine", "drew you", "focused area", "practice", "doctor profile", "professional journey", "achievements"}
 BROAD_FERTILITY_TERMS = {"fertility", "infertility", "fertility issue", "fertility issues", "issue with fertility"}
+FOLLOWUP_TERMS = {"summary", "summarize", "short", "brief", "more", "more detail", "details", "explain simply", "simplify", "continue"}
 GREETING_TERMS = {"hi", "hello", "hey", "good morning", "good afternoon", "good evening"}
 DEFINITION_TERMS = {"what", "what is", "explain", "meaning", "define", "tell me about"}
 TREATMENT_DEFINITIONS = {
@@ -32,28 +35,30 @@ class RagRetriever:
             self.vectors.update(self.embedding_client.embed_documents(missing))
             save_vectors(embeddings_path, self.vectors)
 
-    def answer(self, question: str) -> dict:
+    def answer(self, question: str, history: list[dict] | None = None) -> dict:
+        history = history or []
         if is_greeting(question):
             return {
                 "status": "success",
-                "answer": "Hello. I can help review clinic information about IVF, ICSI, IUI, PCOS, endometriosis, fertility preservation, and appointments. What would you like to know?",
+                "answer": "👋 **Hello!** I can help with IVF, ICSI, IUI, PCOS, endometriosis, fertility preservation, and appointments.\n🩺 Tell me what you’d like to know, and I’ll keep it crisp.",
                 "retrieval": {},
             }
 
-        hit = self.search(question)
+        search_question = expand_followup_question(question, history)
+        hit = self.search(search_question)
         if hit is None:
             return {
                 "status": "not_found",
-                "answer": "I could not find a confident answer in the approved clinic knowledge base. Please contact the clinic directly for guidance.",
+                "answer": "🤔 At present, I’m not sure about that.\n📅 Dr. Madhu Patil’s team can help you with a __doctor appointment__ for more information.",
                 "retrieval": {},
             }
-        return {"status": "success", "answer": self.compose_answer(question, hit.document), "retrieval": hit_payload(hit)}
+        return {"status": "success", "answer": self.compose_answer(question, hit.document, history), "retrieval": hit_payload(hit)}
 
-    def compose_answer(self, question: str, document: Document) -> str:
+    def compose_answer(self, question: str, document: Document, history: list[dict] | None = None) -> str:
         if self.answer_client is None:
             return format_answer(document, question)
         try:
-            answer = self.answer_client.answer(question, document)
+            answer = self.answer_client.answer(question, document, history or [])
         except Exception:
             answer = ""
         return answer or format_answer(document, question)
@@ -77,6 +82,8 @@ class RagRetriever:
             score = min((0.55 * keyword_score) + (0.45 * vector_score) + title_boost(query_terms, document), 1.0)
             score = apply_service_boost(question, document, score)
             score = apply_broad_fertility_boost(question, document, score)
+            score = apply_prep_boost(question, document, score)
+            score = apply_profile_boost(question, document, score)
             if score < 0.35:
                 continue
             hit = RetrievalHit(document, score, keyword_score, vector_score, filter_mode, "hybrid_vertex" if self.use_vertex else "hybrid_hash")
@@ -94,6 +101,8 @@ def infer_filters(question: str) -> dict[str, object]:
     if treatments:
         filters["treatments"] = treatments
     if query_terms.intersection(APPOINTMENT_TERMS):
+        filters["appointment_eligible"] = True
+    if query_terms.intersection(PREP_TERMS):
         filters["appointment_eligible"] = True
     return filters
 
@@ -134,6 +143,22 @@ def apply_broad_fertility_boost(question: str, document: Document, score: float)
             score -= 0.22
     return max(min(score, 1.0), 0.0)
 
+def apply_prep_boost(question: str, document: Document, score: float) -> float:
+    query_terms = terms(question)
+    service_name = str(document.metadata.get("service_name") or "").lower()
+    if query_terms.intersection(PREP_TERMS) and service_name == "fertility assessment":
+        score += 0.35
+    return max(min(score, 1.0), 0.0)
+
+def apply_profile_boost(question: str, document: Document, score: float) -> float:
+    query_terms = terms(question)
+    if query_terms.intersection(PROFILE_TERMS):
+        if document.metadata.get("page_type") == "homepage":
+            score += 0.24
+        elif document.metadata.get("page_type") == "service":
+            score -= 0.08
+    return max(min(score, 1.0), 0.0)
+
 def format_answer(document: Document, question: str = "") -> str:
     metadata = document.metadata or {}
     page_type = str(metadata.get("page_type") or "").lower()
@@ -152,31 +177,38 @@ def format_answer(document: Document, question: str = "") -> str:
         focus = " and ".join(focus_parts) if focus_parts else "this fertility care topic"
         if definition:
             lines = [
-                definition,
-                f"Based on the clinic information, Dr. Madhu Patil's team covers {service_name}.",
-                f"This page is relevant to {focus}.",
+                f"💡 {definition}",
+                f"🩺 **Dr. Madhu Patil’s Clinic** offers {service_name}.",
+                f"🔎 This is relevant to {focus}.",
             ]
         else:
             lines = [
-                f"Yes. Based on the clinic information, Dr. Madhu Patil's team covers {service_name}.",
-                f"This page is relevant to {focus}.",
+                f"🩺 **Yes.** Dr. Madhu Patil’s Clinic offers {service_name}.",
+                f"🔎 This is relevant to {focus}.",
             ]
         if appointment_eligible:
-            lines.append("For a personal recommendation, the safest next step is to book a consultation so the doctor can review history, reports, and goals.")
+            lines.append("📅 For personal guidance, __booking a consultation__ is the best next step.")
         else:
-            lines.append("For personal medical advice, the clinic should review the patient's history and reports directly.")
-        if document.url:
-            lines.append(f"Source: {document.url}")
-        return "\n\n".join(lines)
+            lines.append("📅 For personal medical advice, please discuss directly with Dr. Madhu Patil's Clinic.")
+        return "\n".join(lines[:4])
 
     snippet = clean_snippet(document.content, 420)
     lines = [
-        "I found a relevant clinic page, but it is a broader overview rather than a specific service page.",
-        snippet,
+        "ℹ️ I found relevant clinic information for this question.",
+        f"📌 {snippet}",
+        "📅 For personal guidance, __booking a consultation__ is the best next step.",
     ]
-    if document.url:
-        lines.append(f"Source: {document.url}")
-    return "\n\n".join(lines)
+    return "\n".join(lines[:4])
+
+def expand_followup_question(question: str, history: list[dict]) -> str:
+    query_terms = terms(question)
+    if not query_terms.intersection(FOLLOWUP_TERMS):
+        return question
+    for item in reversed(history[-25:]):
+        content = str(item.get("content", "")).strip()
+        if content and str(item.get("role", "")).lower() in {"assistant", "user"}:
+            return f"{question} Previous topic: {content[:500]}"
+    return question
 
 def is_greeting(question: str) -> bool:
     query_terms = terms(question)

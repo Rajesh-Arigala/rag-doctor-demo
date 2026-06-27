@@ -12,20 +12,29 @@
     header { background: var(--panel); border-bottom: 1px solid var(--line); padding: 16px clamp(16px, 4vw, 36px); position: sticky; top: 0; z-index: 2; }
     .topbar { max-width: 980px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
     h1 { margin: 0; font-size: clamp(20px, 3vw, 28px); line-height: 1.1; letter-spacing: 0; }
+    .status-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
     .status { display: inline-flex; align-items: center; gap: 7px; color: var(--good); font-size: 13px; white-space: nowrap; }
+    .new-chat { background: #eef2f7; color: #344054; border: 1px solid #d9e2ec; min-height: 34px; padding: 7px 12px; font-size: 13px; }
+    .new-chat:hover { background: #e4eaf2; }
     .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--good); }
     main { max-width: 980px; width: 100%; margin: 0 auto; padding: 18px clamp(12px, 3vw, 24px); }
     .intro { margin: 0 0 14px; color: var(--muted); line-height: 1.45; font-size: 15px; }
     .chat { display: flex; flex-direction: column; gap: 14px; padding-bottom: 12px; }
     .message { display: grid; gap: 8px; max-width: 84%; }
     .message.user { margin-left: auto; justify-items: end; }
-    .bubble { border: 1px solid var(--line); border-radius: 18px; padding: 14px 16px; background: var(--panel); line-height: 1.55; box-shadow: 0 6px 18px rgba(24, 39, 75, 0.06); overflow-wrap: anywhere; white-space: pre-wrap; }
+    .bubble { border: 1px solid var(--line); border-radius: 18px; padding: 14px 16px; background: var(--panel); line-height: 1.6; box-shadow: 0 6px 18px rgba(24, 39, 75, 0.06); overflow-wrap: anywhere; white-space: pre-wrap; }
+    .bubble strong { font-weight: 800; color: #111827; }
+    .bubble em { color: #475467; font-style: italic; }
+    .bubble u { text-decoration-thickness: 2px; text-underline-offset: 3px; }
+    .assistant .bubble { font-size: 15.5px; }
     .user .bubble { background: var(--blue); color: white; border-color: var(--blue); border-bottom-right-radius: 6px; }
     .assistant .bubble { border-bottom-left-radius: 6px; }
     .label { font-size: 12px; color: var(--muted); padding: 0 4px; }
     .sources { display: flex; flex-wrap: wrap; gap: 8px; font-size: 13px; }
     .source-card { display: inline-flex; gap: 6px; align-items: center; background: #eef2f7; border: 1px solid #e1e7ef; border-radius: 999px; padding: 7px 10px; color: #344054; max-width: 100%; }
     .source-card a { color: var(--blue-dark); text-decoration: none; overflow-wrap: anywhere; }
+    .retry { justify-self: start; background: #fff4e5; color: #9a5b00; border: 1px solid #ffd79a; border-radius: 999px; min-height: 34px; padding: 7px 12px; font-size: 13px; }
+    .retry:hover { background: #ffedcc; }
     .examples { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 14px; }
     button { border: 0; border-radius: 999px; min-height: 40px; padding: 9px 14px; font-size: 14px; cursor: pointer; font-weight: 600; }
     .examples button { background: var(--chip); color: #174ea6; }
@@ -53,7 +62,10 @@
     <header>
       <div class="topbar">
         <h1>Dr. Madhu Patil Assistant</h1>
-        <div class="status"><span class="dot"></span><span>Clinic knowledge assistant</span></div>
+        <div class="status-row">
+          <div class="status"><span class="dot"></span><span>Clinic knowledge assistant</span></div>
+          <button class="new-chat" type="button" onclick="newChat()">New chat</button>
+        </div>
       </div>
     </header>
     <main>
@@ -63,12 +75,7 @@
         <button type="button" onclick="askPreset('Can Dr Madhu help with PCOS and endometriosis?')">PCOS & endometriosis</button>
         <button type="button" onclick="askPreset('I want fertility preservation options')">Fertility preservation</button>
       </div>
-      <div id="chat" class="chat" aria-live="polite">
-        <article class="message assistant">
-          <div class="label">Assistant</div>
-          <div class="bubble">Hello. I can help with information from Dr. Madhu Patil's website about fertility assessment, IVF, ICSI, IUI, PCOS, endometriosis, fertility preservation, and consultations.</div>
-        </article>
-      </div>
+      <div id="chat" class="chat" aria-live="polite"></div>
     </main>
     <div class="composer-wrap">
       <form class="composer" onsubmit="submitQuestion(event)">
@@ -81,6 +88,19 @@
     const chat = document.getElementById('chat');
     const questionBox = document.getElementById('question');
     const sendButton = document.getElementById('send');
+    const history = [];
+    const retryCounts = new Map();
+    const MAX_RETRIES = 3;
+    const GREETING = "👋 **Hello!** I can help with information from Dr. Madhu Patil's Clinic about fertility assessment, IVF, ICSI, IUI, PCOS, endometriosis, fertility preservation, and consultations.\n🩺 Ask me anything and I’ll keep it crisp.";
+
+    function newChat() {
+      chat.innerHTML = '';
+      history.length = 0;
+      retryCounts.clear();
+      appendMessage('assistant', GREETING);
+      questionBox.value = '';
+      questionBox.focus();
+    }
 
     function askPreset(text) {
       questionBox.value = text;
@@ -88,7 +108,7 @@
       askQuestion(text);
     }
 
-    function appendMessage(role, text, retrieval) {
+    function appendMessage(role, text, retrieval, retryQuestion) {
       const article = document.createElement('article');
       article.className = `message ${role}`;
       const label = document.createElement('div');
@@ -96,16 +116,41 @@
       label.textContent = role === 'user' ? 'You' : 'Assistant';
       const bubble = document.createElement('div');
       bubble.className = 'bubble';
-      bubble.textContent = text;
+      if (role === 'assistant') {
+        bubble.innerHTML = renderAssistantText(text);
+      } else {
+        bubble.textContent = text;
+      }
       article.append(label, bubble);
       if (retrieval && retrieval.doc_id) {
         const sources = document.createElement('div');
         sources.className = 'sources';
         sources.innerHTML = `
           <span class="source-card">${escapeHtml(retrieval.title || 'Clinic website')}</span>
+          ${retrieval.score ? `<span class="source-card">Grounding score ${escapeHtml(String(retrieval.score))}</span>` : ''}
           ${retrieval.url ? `<span class="source-card"><a href="${escapeAttr(retrieval.url)}" target="_blank" rel="noreferrer">Source page</a></span>` : ''}
         `;
         article.appendChild(sources);
+      }
+      if (retryQuestion) {
+        const count = retryCounts.get(retryQuestion) || 0;
+        if (count < MAX_RETRIES) {
+          const retry = document.createElement('button');
+          retry.className = 'retry';
+          retry.type = 'button';
+          retry.textContent = `Retry ${count + 1}/${MAX_RETRIES}`;
+          retry.addEventListener('click', () => {
+            retryCounts.set(retryQuestion, count + 1);
+            retry.disabled = true;
+            askQuestion(retryQuestion, {fromRetry: true});
+          });
+          article.appendChild(retry);
+        } else {
+          const note = document.createElement('div');
+          note.className = 'sources';
+          note.innerHTML = '<span class="source-card">Retry limit reached</span>';
+          article.appendChild(note);
+        }
       }
       chat.appendChild(article);
       article.scrollIntoView({behavior: 'smooth', block: 'end'});
@@ -117,27 +162,38 @@
       askQuestion(questionBox.value);
     }
 
-    async function askQuestion(rawQuestion) {
+    async function askQuestion(rawQuestion, options = {}) {
       const question = rawQuestion.trim();
       if (!question || sendButton.disabled) return;
       questionBox.value = '';
-      appendMessage('user', question);
+      if (!options.fromRetry) {
+        appendMessage('user', question);
+        history.push({role: 'user', content: question});
+      }
       const typing = appendMessage('assistant', 'Checking the clinic information...', null);
       typing.querySelector('.bubble').classList.add('typing');
       sendButton.disabled = true;
       sendButton.textContent = 'Sending';
       try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 45000);
         const response = await fetch('/api/chat', {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({question})
+          body: JSON.stringify({question, history: history.slice(-25)}),
+          signal: controller.signal
         });
+        clearTimeout(timeout);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const payload = await response.json();
         typing.remove();
-        appendMessage('assistant', payload.answer || 'No answer returned.', payload.retrieval || {});
+        const answer = payload.answer || '🤔 At present, I’m not sure about that.\n📅 I can help you with a doctor appointment for more information.';
+        appendMessage('assistant', answer, payload.retrieval || {});
+        history.push({role: 'assistant', content: answer});
+        retryCounts.delete(question);
       } catch (error) {
         typing.remove();
-        appendMessage('assistant', `I could not reach the demo API. ${String(error)}`);
+        appendMessage('assistant', '🔄 The connection was interrupted. Please try again.\n📅 If this continues, I can still help guide you toward a doctor appointment.', null, question);
       } finally {
         sendButton.disabled = false;
         sendButton.textContent = 'Send';
@@ -151,6 +207,16 @@
         askQuestion(questionBox.value);
       }
     });
+
+    function renderAssistantText(value) {
+      let html = escapeHtml(value);
+      html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+      html = html.replace(/__(.+?)__/g, '<u>$1</u>');
+      html = html.replace(/(^|\s)\*(?!\*)([^*]+?)\*/g, '$1<em>$2</em>');
+      return html;
+    }
+
+    newChat();
 
     function escapeHtml(value) {
       return value.replace(/[&<>"]/g, char => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[char]));

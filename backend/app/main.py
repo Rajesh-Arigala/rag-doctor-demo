@@ -44,7 +44,8 @@ def chat(payload: dict[str, Any]) -> dict[str, Any]:
     question = str(payload.get("question") or payload.get("message") or "").strip()
     if not question:
         raise HTTPException(status_code=400, detail="question is required")
-    result = get_retriever().answer(question)
+    history = payload.get("history") if isinstance(payload.get("history"), list) else []
+    result = get_retriever().answer(question, history=history)
     return {"question": question, **result}
 
 @app.get("/api/smoke")
