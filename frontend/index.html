@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Doctor RAG Chat Review</title>
+  <title>Dr. Madhu Patil Assistant</title>
   <style>
     * { box-sizing: border-box; }
     :root { color-scheme: light; --bg: #f4f7fb; --panel: #ffffff; --ink: #17202a; --muted: #667085; --line: #d9e2ec; --blue: #1a73e8; --blue-dark: #1558b0; --chip: #e8f0fe; --good: #137333; }
@@ -52,12 +52,12 @@
   <div class="app">
     <header>
       <div class="topbar">
-        <h1>Doctor RAG Chat Review</h1>
-        <div class="status"><span class="dot"></span><span>Vertex hybrid retrieval live</span></div>
+        <h1>Dr. Madhu Patil Assistant</h1>
+        <div class="status"><span class="dot"></span><span>Clinic knowledge assistant</span></div>
       </div>
     </header>
     <main>
-      <p class="intro">Ask patient-style questions and review whether the clinic knowledge base returns the right, grounded answer.</p>
+      <p class="intro">Ask about clinic services, fertility treatments, assessments, PCOS, endometriosis, and appointment-related information.</p>
       <div class="examples">
         <button type="button" onclick="askPreset('Do you provide IVF and ICSI treatment?')">IVF / ICSI</button>
         <button type="button" onclick="askPreset('Can Dr Madhu help with PCOS and endometriosis?')">PCOS & endometriosis</button>
@@ -66,7 +66,7 @@
       <div id="chat" class="chat" aria-live="polite">
         <article class="message assistant">
           <div class="label">Assistant</div>
-          <div class="bubble">Hello. Ask me a clinic-related fertility question and I will answer using the approved website corpus, with the source shown below the response.</div>
+          <div class="bubble">Hello. I can help with information from Dr. Madhu Patil's website about fertility assessment, IVF, ICSI, IUI, PCOS, endometriosis, fertility preservation, and consultations.</div>
         </article>
       </div>
     </main>
@@ -102,9 +102,7 @@
         const sources = document.createElement('div');
         sources.className = 'sources';
         sources.innerHTML = `
-          <span class="source-card">${escapeHtml(retrieval.title || retrieval.doc_id)}</span>
-          <span class="source-card">Score ${escapeHtml(String(retrieval.score || ''))}</span>
-          <span class="source-card">${escapeHtml(retrieval.mode || '')}</span>
+          <span class="source-card">${escapeHtml(retrieval.title || 'Clinic website')}</span>
           ${retrieval.url ? `<span class="source-card"><a href="${escapeAttr(retrieval.url)}" target="_blank" rel="noreferrer">Source page</a></span>` : ''}
         `;
         article.appendChild(sources);
@@ -124,7 +122,7 @@
       if (!question || sendButton.disabled) return;
       questionBox.value = '';
       appendMessage('user', question);
-      const typing = appendMessage('assistant', 'Checking the approved clinic corpus...', null);
+      const typing = appendMessage('assistant', 'Checking the clinic information...', null);
       typing.querySelector('.bubble').classList.add('typing');
       sendButton.disabled = true;
       sendButton.textContent = 'Sending';

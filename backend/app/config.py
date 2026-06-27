@@ -15,4 +15,6 @@ METADATA_MANIFEST_PATH = Path(os.getenv("RAG_METADATA_MANIFEST_PATH", DATA_DIR /
 GOOGLE_CLOUD_PROJECT = os.getenv("GOOGLE_CLOUD_PROJECT", "multi-agent-adk-1")
 GOOGLE_CLOUD_LOCATION = os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1")
 EMBEDDING_MODEL_NAME = os.getenv("EMBEDDING_MODEL_NAME", "text-embedding-005")
+GENERATION_MODEL_NAME = os.getenv("GENERATION_MODEL_NAME", "gemini-2.5-flash")
 RAG_USE_VERTEX = os.getenv("RAG_USE_VERTEX", "true").strip().lower() in {"1", "true", "yes", "on"}
+RAG_USE_GENERATION = os.getenv("RAG_USE_GENERATION", "true").strip().lower() in {"1", "true", "yes", "on"}

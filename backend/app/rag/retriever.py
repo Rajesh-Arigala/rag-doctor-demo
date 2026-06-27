@@ -1,19 +1,31 @@
 from __future__ import annotations
 
+from app.config import RAG_USE_GENERATION
+from app.rag.answering import VertexAnswerClient
 from app.rag.embeddings import HashEmbeddingClient, VertexEmbeddingClient, cosine
 from app.rag.loader import save_vectors
 from app.rag.models import Document, RetrievalHit
 from app.rag.text import terms, tokenize
 
-CONDITION_TERMS = {"pcos": "pcos", "endometriosis": "endometriosis", "irregular periods": "irregular periods", "hormonal": "hormonal issues", "hormonal issues": "hormonal issues"}
-TREATMENT_TERMS = {"ivf": "ivf", "icsi": "icsi", "iui": "iui", "fertility preservation": "fertility preservation", "egg freezing": "egg freezing", "sperm freezing": "sperm freezing", "embryo freezing": "embryo freezing", "fertility assessment": "fertility assessment", "immunotherapy": "immunotherapy"}
+CONDITION_TERMS = {"pcos": "pcos", "endometriosis": "endometriosis", "irregular periods": "irregular periods", "hormonal": "hormonal issues", "hormonal issues": "hormonal issues", "infertility": "infertility"}
+TREATMENT_TERMS = {"ivf": "ivf", "icsi": "icsi", "iui": "iui", "fertility preservation": "fertility preservation", "egg freezing": "egg freezing", "sperm freezing": "sperm freezing", "embryo freezing": "embryo freezing", "fertility assessment": "fertility assessment", "fertility issue": "fertility assessment", "fertility issues": "fertility assessment", "issue with fertility": "fertility assessment", "immunotherapy": "immunotherapy"}
 APPOINTMENT_TERMS = {"appointment", "book", "consult", "consultation", "schedule", "visit"}
+BROAD_FERTILITY_TERMS = {"fertility", "infertility", "fertility issue", "fertility issues", "issue with fertility"}
+GREETING_TERMS = {"hi", "hello", "hey", "good morning", "good afternoon", "good evening"}
+DEFINITION_TERMS = {"what", "what is", "explain", "meaning", "define", "tell me about"}
+TREATMENT_DEFINITIONS = {
+    "ivf": "IVF, or in vitro fertilization, is a fertility treatment where eggs are fertilized with sperm outside the body in a laboratory. A suitable embryo may then be transferred into the uterus.",
+    "icsi": "ICSI, or intracytoplasmic sperm injection, is an IVF-related technique where a single sperm is injected directly into an egg in the laboratory.",
+    "iui": "IUI, or intrauterine insemination, is a fertility treatment where prepared sperm is placed directly into the uterus around ovulation.",
+    "fertility preservation": "Fertility preservation means saving eggs, sperm, or embryos for possible future pregnancy planning.",
+}
 
 class RagRetriever:
     def __init__(self, documents: list[Document], vectors: dict[str, list[float]], embeddings_path, use_vertex: bool = True):
         self.documents = documents
         self.use_vertex = use_vertex
         self.embedding_client = VertexEmbeddingClient() if use_vertex else HashEmbeddingClient()
+        self.answer_client = VertexAnswerClient() if use_vertex and RAG_USE_GENERATION else None
         self.vectors = vectors
         missing = [document for document in documents if document.doc_id not in self.vectors]
         if missing:
@@ -21,6 +33,13 @@ class RagRetriever:
             save_vectors(embeddings_path, self.vectors)
 
     def answer(self, question: str) -> dict:
+        if is_greeting(question):
+            return {
+                "status": "success",
+                "answer": "Hello. I can help review clinic information about IVF, ICSI, IUI, PCOS, endometriosis, fertility preservation, and appointments. What would you like to know?",
+                "retrieval": {},
+            }
+
         hit = self.search(question)
         if hit is None:
             return {
@@ -28,7 +47,16 @@ class RagRetriever:
                 "answer": "I could not find a confident answer in the approved clinic knowledge base. Please contact the clinic directly for guidance.",
                 "retrieval": {},
             }
-        return {"status": "success", "answer": format_answer(hit.document, question), "retrieval": hit_payload(hit)}
+        return {"status": "success", "answer": self.compose_answer(question, hit.document), "retrieval": hit_payload(hit)}
+
+    def compose_answer(self, question: str, document: Document) -> str:
+        if self.answer_client is None:
+            return format_answer(document, question)
+        try:
+            answer = self.answer_client.answer(question, document)
+        except Exception:
+            answer = ""
+        return answer or format_answer(document, question)
 
     def search(self, question: str) -> RetrievalHit | None:
         filters = infer_filters(question)
@@ -48,6 +76,7 @@ class RagRetriever:
             vector_score = cosine(query_vector, self.vectors.get(document.doc_id, []))
             score = min((0.55 * keyword_score) + (0.45 * vector_score) + title_boost(query_terms, document), 1.0)
             score = apply_service_boost(question, document, score)
+            score = apply_broad_fertility_boost(question, document, score)
             if score < 0.35:
                 continue
             hit = RetrievalHit(document, score, keyword_score, vector_score, filter_mode, "hybrid_vertex" if self.use_vertex else "hybrid_hash")
@@ -95,6 +124,16 @@ def apply_service_boost(question: str, document: Document, score: float) -> floa
         score -= 0.12
     return max(min(score, 1.0), 0.0)
 
+def apply_broad_fertility_boost(question: str, document: Document, score: float) -> float:
+    query_terms = terms(question)
+    service_name = str(document.metadata.get("service_name") or "").lower()
+    treatments = set(document.metadata.get("treatments", []))
+    if query_terms.intersection(BROAD_FERTILITY_TERMS) and ("fertility assessment" in treatments or service_name == "fertility assessment"):
+        score += 0.28
+        if document.metadata.get("page_type") == "homepage":
+            score -= 0.22
+    return max(min(score, 1.0), 0.0)
+
 def format_answer(document: Document, question: str = "") -> str:
     metadata = document.metadata or {}
     page_type = str(metadata.get("page_type") or "").lower()
@@ -104,16 +143,24 @@ def format_answer(document: Document, question: str = "") -> str:
     appointment_eligible = bool(metadata.get("appointment_eligible"))
 
     if page_type == "service":
+        definition = treatment_definition_for(question, treatments)
         focus_parts = []
         if treatments:
             focus_parts.append("treatments such as " + readable_list(treatments[:4]))
         if conditions:
             focus_parts.append("conditions such as " + readable_list(conditions[:4]))
         focus = " and ".join(focus_parts) if focus_parts else "this fertility care topic"
-        lines = [
-            f"Yes. Based on the clinic information, Dr. Madhu Patil's team covers {service_name}.",
-            f"This page is relevant to {focus}.",
-        ]
+        if definition:
+            lines = [
+                definition,
+                f"Based on the clinic information, Dr. Madhu Patil's team covers {service_name}.",
+                f"This page is relevant to {focus}.",
+            ]
+        else:
+            lines = [
+                f"Yes. Based on the clinic information, Dr. Madhu Patil's team covers {service_name}.",
+                f"This page is relevant to {focus}.",
+            ]
         if appointment_eligible:
             lines.append("For a personal recommendation, the safest next step is to book a consultation so the doctor can review history, reports, and goals.")
         else:
@@ -130,6 +177,22 @@ def format_answer(document: Document, question: str = "") -> str:
     if document.url:
         lines.append(f"Source: {document.url}")
     return "\n\n".join(lines)
+
+def is_greeting(question: str) -> bool:
+    query_terms = terms(question)
+    stripped = question.strip().lower()
+    return stripped in GREETING_TERMS or bool(query_terms.intersection(GREETING_TERMS)) and len(query_terms) <= 3
+
+def treatment_definition_for(question: str, treatments: list[str]) -> str:
+    query_terms = terms(question)
+    if not query_terms.intersection(DEFINITION_TERMS):
+        return ""
+    treatment_terms = set(treatments).intersection(TREATMENT_DEFINITIONS)
+    requested_terms = query_terms.intersection(TREATMENT_DEFINITIONS)
+    for term in sorted(requested_terms.union(treatment_terms)):
+        if term in query_terms:
+            return TREATMENT_DEFINITIONS[term]
+    return ""
 
 def listify(value) -> list[str]:
     if isinstance(value, (list, tuple, set)):

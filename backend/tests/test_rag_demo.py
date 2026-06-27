@@ -40,3 +40,24 @@ def test_answer_is_doctor_friendly_not_raw_corpus():
     assert 'Yes.' in result['answer']
     assert 'Headings:' not in result['answer']
     assert result['retrieval']['doc_id'] == 'WEB-DRMADHU-006'
+
+
+def test_system_instruction_is_strict():
+    from app.rag.answering import SYSTEM_INSTRUCTION
+
+    required_sections = [
+        "ROLE",
+        "PRIMARY OBJECTIVE",
+        "CONTEXT BOUNDARY",
+        "MEDICAL SAFETY",
+        "RESPONSE STYLE",
+        "OUTPUT CONTRACT",
+        "WHEN INFORMATION IS MISSING",
+        "PRIVACY",
+    ]
+    for section in required_sections:
+        assert section in SYSTEM_INSTRUCTION
+    assert "approved website context" in SYSTEM_INSTRUCTION
+    assert "Do not diagnose" in SYSTEM_INSTRUCTION
+    assert "Never invent facts" in SYSTEM_INSTRUCTION
+    assert "Do not mention chunks, embeddings, retrieval, scores" in SYSTEM_INSTRUCTION
